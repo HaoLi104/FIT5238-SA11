@@ -342,3 +342,5 @@ class FeatureExtraction:
              return -1
 
     
+    def getFeaturesList(self):
+        return self.features
