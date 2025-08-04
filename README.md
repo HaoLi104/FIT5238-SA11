@@ -1,5 +1,4 @@
-# RUN SHEET - Intelligent Phishing Website Detection System
-**FIT5238-SA11 Team Project**
+#FIT5238-SA11 Team Project
 
 ## PROJECT LINK
 `https://github.com/HaoLi104/FIT5238-SA11.git`
