@@ -14,15 +14,15 @@
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <link href="static/styles.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='styles.css') }}" rel="stylesheet">
     <title>Intelligent Phishing Website Detection System</title>
     
 </head>
 
-
 <body>
     
 <div class="container">
+    <div class="loading-spinner" id="loading-spinner" style="display: none;"></div>
     <div class="row">
         <div class="form col-md" id="form1">
             <i class="fas fa-question-circle" id="help-icon" title="Help"></i>
@@ -31,7 +31,7 @@
                 Enter a URL address and we will analyze the website's security for you
             </p>
     
-            <form action="/" method="post">
+            <form action="/" method="post" id="detection-form">
                 <div style="position: relative;">
                     <input type="text" class="form__input" name="url" id="url" 
                            placeholder="Enter URL to detect (e.g., https://www.google.com)" 
@@ -42,6 +42,13 @@
                     <i class="fas fa-search"></i> Start Detection
                 </button>
             </form>
+
+            <div class="history-card" id="history-card">
+                <h4><i class="fas fa-history"></i> Recent Checks</h4>
+                <ul id="history-list">
+                    <!-- History items will be injected by JavaScript -->
+                </ul>
+            </div>
            
         </div>
     
@@ -49,20 +56,32 @@
             <div class="result-card">
                 <div class="url-display">
                     <i class="fas fa-globe"></i>
-                    <a href="{{ url }}" target="_blank">{{ url }}</a>
+                    <a href="{{ url }}" target="_blank" id="result-url">{{ url }}</a>
                 </div>
                    
                 <div id="prediction"></div>
                 
                 <div style="text-align: center; margin-top: 20px;">
-                    <button class="button1" id="button1" role="button" onclick="window.open('{{url}}')" target="_blank">
+                    <button class="button1" id="button1" role="button">
                         <i class="fas fa-check-circle"></i> Safe Access
                     </button>
-                    <button class="button2" id="button2" role="button" onclick="window.open('{{url}}')" target="_blank">
+                    <button class="button2" id="button2" role="button">
                         <i class="fas fa-exclamation-triangle"></i> Proceed with Caution
                     </button>
                 </div>
             </div>
+            
+            {% if reasons and reasons|length > 0 %}
+            <div class="reasons-card">
+                <h4><i class="fas fa-microscope"></i> Risk Analysis</h4>
+                <ul>
+                    {% for reason in reasons %}
+                        <li><i class="fas fa-exclamation-circle"></i> {{ reason }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+
         </div> 
     </div>
     
@@ -70,96 +89,147 @@
         <p><i class="fas fa-code"></i> ©2025 FIT5238-SA11 Intelligent Network Security Detection System</p>
     </div>
 </div>
-
     
-    <div id="help-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            <h3>How to Use This System</h3>
-            <p><strong>1. Enter a URL:</strong></p>
-            <p>Type or paste the full website address you want to check into the input box (e.g., <em>https://www.example.com</em>).</p>
-            <br>
-            <p><strong>2. Start Detection:</strong></p>
-            <p>Click the "Start Detection" button to begin the analysis.</p>
-            <br>
-            <p><strong>3. Understand the Results:</strong></p>
-            <ul>
-                <li><strong style="color: #38a169;">Safe:</strong> If the result shows a high safety percentage, the website is likely legitimate. You can click "Safe Access" to visit it.</li>
-                <li><strong style="color: #e53e3e;">Risk:</strong> If the result shows a high risk percentage, the website might be a phishing site. We recommend you do not visit it. If you must, use the "Proceed with Caution" button.</li>
-            </ul>
-        </div>
+<div id="help-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <h3>How to Use This System</h3>
+        <p><strong>1. Enter a URL:</strong></p>
+        <p>Type or paste the full website address you want to check into the input box (e.g., <em>https://www.example.com</em>).</p>
+        <br>
+        <p><strong>2. Start Detection:</strong></p>
+        <p>Click the "Start Detection" button to begin the analysis.</p>
+        <br>
+        <p><strong>3. Understand the Results:</strong></p>
+        <ul>
+            <li><strong style="color: #38a169;">Safe:</strong> If the result shows a high safety percentage, the website is likely legitimate. You can click "Safe Access" to visit it.</li>
+            <li><strong style="color: #e53e3e;">Risk:</strong> If the result shows a high risk percentage, the website might be a phishing site. We recommend you do not visit it. If you must, use the "Proceed with Caution" button.</li>
+        </ul>
     </div>
+</div>
 
-    <!-- JavaScript -->
-    <script>
-        // Set custom validation messages
-        document.addEventListener('DOMContentLoaded', function() {
-            const urlInput = document.getElementById('url');
-            urlInput.addEventListener('invalid', function(e) {
-                if (this.validity.valueMissing) {
-                    this.setCustomValidity('Please enter URL address');
-                } else {
-                    this.setCustomValidity('');
-                }
-            });
-            
-            urlInput.addEventListener('input', function(e) {
-                this.setCustomValidity('');
-            });
-        });
+<!-- JavaScript -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
         
-        // Fix numerical processing logic
-        let x = parseFloat('{{xx}}');
-        console.log('Received value:', x); // Debug use
+        const urlInput = document.getElementById('url');
+        const detectionForm = document.getElementById('detection-form');
+        const predictionDiv = document.getElementById('prediction');
+        const button1 = document.getElementById('button1');
+        const button2 = document.getElementById('button2');
+        const resultUrl = document.getElementById('result-url');
+        const spinner = document.getElementById('loading-spinner');
+        const historyList = document.getElementById('history-list');
+
+        const MAX_HISTORY_ITEMS = 5;
+
+        // --- History Management ---
+        function getHistory() {
+            return JSON.parse(localStorage.getItem('phishingHistory')) || [];
+        }
+
+        function saveHistory(url) {
+            if (!url) return;
+            let history = getHistory();
+            // Remove if already exists to move it to the top
+            history = history.filter(item => item !== url);
+            // Add to the front
+            history.unshift(url);
+            // Keep only the last 5 items
+            if (history.length > MAX_HISTORY_ITEMS) {
+                history.pop();
+            }
+            localStorage.setItem('phishingHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const history = getHistory();
+            historyList.innerHTML = '';
+            if (history.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = 'No recent checks.';
+                li.style.opacity = '0.7';
+                historyList.appendChild(li);
+            } else {
+                history.forEach(url => {
+                    const li = document.createElement('li');
+                    li.textContent = url;
+                    li.classList.add('history-item');
+                    li.addEventListener('click', () => {
+                        urlInput.value = url;
+                        detectionForm.requestSubmit();
+                    });
+                    historyList.appendChild(li);
+                });
+            }
+        }
+        
+        // --- Form Submission Logic ---
+        detectionForm.addEventListener('submit', function(e) {
+            const url = urlInput.value.trim();
+            if (url) {
+                spinner.style.display = 'block';
+                saveHistory(url);
+            }
+        });
+
+        // Set custom validation messages
+        urlInput.addEventListener('invalid', (e) => {
+            e.target.setCustomValidity(e.target.valueMissing ? 'Please enter URL address' : '');
+        });
+        urlInput.addEventListener('input', (e) => e.target.setCustomValidity(''));
+
+        // --- Result Display Logic ---
+        let x = parseFloat('{{ xx | default(-1) }}');
         
         if (x >= 0 && x <= 1) {
             let safePercentage = Math.round(x * 100);
             let unsafePercentage = 100 - safePercentage;
-            
+            let url = '{{ url | default("") }}';
+
             if (x >= 0.5) {
-                // Safe website
-                var label = '<i class="fas fa-shield-check" style="color: #38a169; margin-right: 10px;"></i>Website Safety: ' + safePercentage + '%';
-                document.getElementById("prediction").innerHTML = label;
-                document.getElementById("prediction").className = "safe";
-                document.getElementById("button1").style.display = "inline-block";
-                document.getElementById("button2").style.display = "none";
+                predictionDiv.innerHTML = `<i class="fas fa-shield-check" style="color: #38a169; margin-right: 10px;"></i>Website Safety: ${safePercentage}%`;
+                predictionDiv.className = "safe";
+                button1.style.display = "inline-block";
+                button2.style.display = "none";
+                button1.onclick = () => window.open(url, '_blank');
             } else {
-                // Unsafe website
-                var label = '<i class="fas fa-exclamation-triangle" style="color: #e53e3e; margin-right: 10px;"></i>Website Risk: ' + unsafePercentage + '%';
-                document.getElementById("prediction").innerHTML = label;
-                document.getElementById("prediction").className = "unsafe";
-                document.getElementById("button2").style.display = "inline-block";
-                document.getElementById("button1").style.display = "none";
+                predictionDiv.innerHTML = `<i class="fas fa-exclamation-triangle" style="color: #e53e3e; margin-right: 10px;"></i>Website Risk: ${unsafePercentage}%`;
+                predictionDiv.className = "unsafe";
+                button2.style.display = "inline-block";
+                button1.style.display = "none";
+                button2.onclick = () => window.open(url, '_blank');
             }
+            resultUrl.href = url;
+            resultUrl.textContent = url;
+
         } else {
-            // Initial state or error state
-            document.getElementById("prediction").innerHTML = '<i class="fas fa-info-circle"></i> Please enter a URL address for detection...';
-            document.getElementById("button1").style.display = "none";
-            document.getElementById("button2").style.display = "none";
+            predictionDiv.innerHTML = '<i class="fas fa-info-circle"></i> Please enter a URL address for detection...';
+            button1.style.display = "none";
+            button2.style.display = "none";
         }
 
-        // Help Modal Logic
+        // Hide spinner on load (it's shown on submit)
+        spinner.style.display = 'none';
+
+        // Initial render of history
+        renderHistory();
+
+        // --- Help Modal Logic ---
         const helpModal = document.getElementById('help-modal');
         const helpIcon = document.getElementById('help-icon');
-        const closeBtn = document.getElementsByClassName('close-btn')[0];
+        const closeBtn = helpModal.querySelector('.close-btn');
 
-        helpIcon.onclick = function() {
-            helpModal.style.display = "block";
-        }
-
-        closeBtn.onclick = function() {
-            helpModal.style.display = "none";
-        }
-
-        window.onclick = function(event) {
+        helpIcon.onclick = () => helpModal.style.display = "block";
+        closeBtn.onclick = () => helpModal.style.display = "none";
+        window.onclick = (event) => {
             if (event.target == helpModal) {
                 helpModal.style.display = "none";
             }
-        }
-    
-    </script>
+        };
+    });
+</script>
     
 </body>
-
 </html>
-
